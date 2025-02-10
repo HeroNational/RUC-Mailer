@@ -471,7 +471,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <?php endforeach; ?>
         </div>
       <?php endif; ?>
-      
+      <form method="post" enctype="multipart/form-data">
       <!-- Système d'onglets pour choisir la source -->
       <ul class="nav nav-tabs mb-3" id="dataSourceTabs" role="tablist">
         <li class="nav-item" role="presentation">
