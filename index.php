@@ -491,27 +491,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
         <!-- Onglet Google Sheet -->
         <div class="tab-pane fade" id="gsheet-tab" role="tabpanel" aria-labelledby="gsheet-tab-btn">
-          <div class="mb-3">
-            <label for="selected_sheet" class="form-label">Liste des Google Sheets</label>
-            <?= $sheetsDropdownHtml; ?>
-          </div>
-          <div class="mb-3">
-            <label for="spreadsheet_id" class="form-label">ID du Google Sheet</label>
-            <input type="text" name="spreadsheet_id" id="spreadsheet_id" class="form-control" placeholder="Ex : 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms">
-          </div>
-          <div class="mb-3">
-            <label for="sheet_range" class="form-label">Nom de l'onglet</label>
-            <input type="text" name="sheet_range" id="sheet_range" class="form-control" placeholder="Ex : Tableau1">
-          </div>
-          <div class="mb-3">
-            <label for="selected_tab" class="form-label">Liste des onglets</label>
-            <select name="selected_tab" id="selected_tab" class="form-select">
-              <option value="">-- Choisir un onglet --</option>
-            </select>
-          </div>
-          <!-- Zone de debug pour le Google Sheet -->
-          <div class="mb-3">
-            <?= !empty($googleSheetDebugHtml) ? $googleSheetDebugHtml : ''; ?>
+          <div class="row">
+            <div class="col-md-6">
+                <label for="selected_sheet" class="form-label">Liste des Google Sheets</label>
+                <?= $sheetsDropdownHtml; ?>
+            </div>
+            <div class="col-md-6">
+                <label for="spreadsheet_id" class="form-label">ID du Google Sheet</label>
+                <input type="text" name="spreadsheet_id" id="spreadsheet_id" class="form-control" placeholder="Ex : 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms">
+            </div>
+            <div class="col-md-6 ">
+                <label for="selected_tab" class="form-label">Liste des onglets</label>
+                <select name="selected_tab" id="selected_tab" class="form-select">
+                <option value="">-- Choisir un onglet --</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label for="sheet_range" class="form-label">Nom de l'onglet</label>
+                <input type="text" name="sheet_range" id="sheet_range" class="form-control" placeholder="Ex : Tableau1">
+            </div>
+            <!-- Zone de debug pour le Google Sheet -->
+            <div class="col-md-6">
+                <?= !empty($googleSheetDebugHtml) ? $googleSheetDebugHtml : ''; ?>
+            </div>
           </div>
         </div>
       </div>
