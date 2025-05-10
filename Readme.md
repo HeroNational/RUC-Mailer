@@ -61,3 +61,6 @@ Pour contribuer au développement de ce projet :
 ## Licence
 
 Ce projet est sous licence MIT. Voir le fichier LICENSE pour plus de détails.
+
+
+![Image](./Documentations/images/RUC%20Bulk%20Mailer%20landscape.png)
