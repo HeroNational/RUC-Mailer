@@ -166,49 +166,72 @@ class GoogleSheetsLister {
 
 // Classe pour envoyer un e-mail via PHPMailer
 class EmailSender {
-    private $smtpConfig;
-    private $emailFrom;
-    private $senderName;
-    private $subject;
-    private $replyToAddresses = [];
-    public function __construct(array $smtpConfig, string $emailFrom, string $senderName, string $subject, string $replyTo) {
-        $this->smtpConfig = $smtpConfig;
-        $this->emailFrom  = $emailFrom;
-        $this->senderName = $senderName;
-        $this->subject    = $subject;
-        $this->replyToAddresses = preg_split('/[\s,;]+/', $replyTo);
-    }
-    public function sendEmail(string $toEmail, string $toName, string $message) {
-        $mail = new PHPMailer(true);
-        try {
-            $mail->CharSet = 'UTF-8';
-            $mail->isSMTP();
-            $mail->Host = $this->smtpConfig['host'];
-            $mail->Port = $this->smtpConfig['port'];
-            if (!empty($this->smtpConfig['encryption'])) {
-                $mail->SMTPSecure = $this->smtpConfig['encryption'];
-            }
-            $mail->SMTPAuth = true;
-            $mail->Username = $this->smtpConfig['user'];
-            $mail->Password = $this->smtpConfig['password'];
-            $mail->setFrom($this->emailFrom, $this->senderName);
-            $mail->addAddress($toEmail, $toName);
-            foreach ($this->replyToAddresses as $reply) {
-                $reply = trim($reply);
-                if (!empty($reply) && filter_var($reply, FILTER_VALIDATE_EMAIL)) {
-                    $mail->addReplyTo($reply);
-                }
-            }
-            $mail->isHTML(true);
-            $mail->Subject = $this->subject;
-            $mail->Body = $message;
-            $mail->send();
-            return true;
-        } catch (PHPMailerException $e) {
-            return $mail->ErrorInfo;
-        }
-    }
+  private $smtpConfig;
+  private $emailFrom;
+  private $senderName;
+  private $subject;
+  private $replyToAddresses = [];
+  private $attachments = []; // ← NOUVEAU
+
+  public function __construct(array $smtpConfig, string $emailFrom, string $senderName, string $subject, string $replyTo) {
+      $this->smtpConfig = $smtpConfig;
+      $this->emailFrom  = $emailFrom;
+      $this->senderName = $senderName;
+      $this->subject    = $subject;
+      $this->replyToAddresses = preg_split('/[\s,;]+/', $replyTo);
+  }
+
+  // Méthode pour enregistrer les pièces jointes
+  public function setAttachments(array $attachments) {
+      $this->attachments = $attachments;
+  }
+
+  public function sendEmail(string $toEmail, string $toName, string $message) {
+      $mail = new PHPMailer(true);
+      try {
+          $mail->CharSet = 'UTF-8';
+          $mail->isSMTP();
+          $mail->Host = $this->smtpConfig['host'];
+          $mail->Port = $this->smtpConfig['port'];
+          if (!empty($this->smtpConfig['encryption'])) {
+              $mail->SMTPSecure = $this->smtpConfig['encryption'];
+          }
+          $mail->SMTPAuth = true;
+          $mail->Username = $this->smtpConfig['user'];
+          $mail->Password = $this->smtpConfig['password'];
+
+          $mail->setFrom($this->emailFrom, "Comité Financier - RUC");
+          $mail->addAddress($toEmail, $toName);
+
+          // Ajout des adresses de reply-to
+          foreach ($this->replyToAddresses as $reply) {
+              $reply = trim($reply);
+              if (!empty($reply) && filter_var($reply, FILTER_VALIDATE_EMAIL)) {
+                  $mail->addReplyTo($reply);
+              }
+          }
+
+          // **Ajout des pièces jointes** si elles existent
+          if (!empty($this->attachments)) {
+              foreach ($this->attachments as $file) {
+                  // $file['tmp_name'] : chemin temporaire
+                  // $file['name']     : nom d'origine du fichier
+                  $mail->addAttachment($file['tmp_name'], $file['name']);
+              }
+          }
+
+          $mail->isHTML(true);
+          $mail->Subject = $this->subject;
+          $mail->Body    = $message;
+
+          $mail->send();
+          return true;
+      } catch (PHPMailerException $e) {
+          return $mail->ErrorInfo;
+      }
+  }
 }
+
 
 // Classe pour envoyer en masse des e-mails personnalisés
 class BulkMailer {
@@ -260,7 +283,7 @@ class BulkMailer {
                 $this->results[] = "Email envoyé à <strong>$prenom ($email)</strong>.";
             } else {
                 $failedCount++;
-                $this->results[] = "Erreur pour <strong>$email</strong> : " . $result;
+                $this->results[] = "<span style:'color : red'> Erreur pour <strong>$email</strong></span> : " . $result;
             }
         }
         $this->results[] = "<br>Envoi terminé : <strong>$sentCount</strong> email(s) envoyé(s), <strong>$failedCount</strong> échec(s).";
@@ -305,6 +328,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (!empty($spreadsheetId)) {
         $sheetRange = !empty($_POST['sheet_range']) ? trim($_POST['sheet_range']) : 'Tableau1';
+        // -------------------------------
+        // Bloc pour utiliser les personnes partagées
+        // -------------------------------
+        if (isset($_POST['use_shared_people']) && $_POST['use_shared_people'] == '1') {
+          try {
+              require 'SharedPeopleParser.php';
+              $dataParser = new SharedPeopleParser($spreadsheetId);
+              $headers = $dataParser->getHeaders(); // ['name', 'email']
+              // Dans SharedPeopleParser, le nom est en index 0 et l'email en index 1
+              $indexPrenom = 0;
+              $indexEmail = 1;
+          } catch (Exception $e) {
+              $error = "Erreur lors de la récupération des personnes partagées : " . $e->getMessage();
+              $headers = [];
+          }
+          if (empty($headers)) {
+              $error = "Aucun partage trouvé pour ce Google Sheet.";
+          }
+      } else {
+          // -------------------------------
+          // Bloc existant pour utiliser les données de l'onglet du Google Sheet
+          // -------------------------------
+          try {
+              $dataParser = new GoogleSheetParser($spreadsheetId, $sheetRange);
+              $headers = $dataParser->getHeaders();
+              $googleSheetDebugHtml = $dataParser->getDebugHtml();
+          } catch (Exception $e) {
+              $error = "Erreur lors de la récupération du Google Sheet : " . $e->getMessage();
+              $headers = [];
+          }
+          if (empty($headers)) {
+              $error = "Le Google Sheet est vide ou invalide.";
+          } else {
+              $fieldname  = $_POST['fieldname'] ?? '';
+              $fieldemail = $_POST['fieldemail'] ?? '';
+              $indexPrenom = array_search($fieldname, $headers);
+              $indexEmail  = array_search($fieldemail, $headers);
+          }
+      }
         try {
             $dataParser = new GoogleSheetParser($spreadsheetId, $sheetRange);
             $headers = $dataParser->getHeaders();
@@ -370,6 +432,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $senderName = 'Raise-Up Cameroon' . ($senderSuffix ? ' | ' . $senderSuffix : '');
                 $baseTemplate = $templates['template1']['description'] ?? '';
                 $emailSender = new EmailSender($smtpConfig, $emailFrom, $senderName, $subject, $replyTo);
+                // Vérifier s'il y a au moins un fichier
+                if (isset($_FILES['attachments']) && !empty($_FILES['attachments']['name'][0])) {
+                  $uploadedFiles = [];
+                  // Boucle sur tous les fichiers sélectionnés
+                  for ($i = 0; $i < count($_FILES['attachments']['name']); $i++) {
+                      // S'il n'y a pas d'erreur
+                      if ($_FILES['attachments']['error'][$i] === UPLOAD_ERR_OK) {
+                          $uploadedFiles[] = [
+                              'tmp_name' => $_FILES['attachments']['tmp_name'][$i],
+                              'name'     => $_FILES['attachments']['name'][$i]
+                          ];
+                      }
+                  }
+                  // On passe ces fichiers à l'EmailSender
+                  $emailSender->setAttachments($uploadedFiles);
+                }
+
                 $bulkMailer = new BulkMailer($dataParser, $emailSender, $indexPrenom, $indexEmail, $messageTemplate, $baseTemplate, $senderSuffix);
                 $results = $bulkMailer->process();
             }
@@ -489,8 +568,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <input type="file" name="csv_file" id="csv_file" class="form-control" accept=".csv">
           </div>
         </div>
-        <!-- Onglet Google Sheet -->
-        <div class="tab-pane fade" id="gsheet-tab" role="tabpanel" aria-labelledby="gsheet-tab-btn">
+        <div class="tab-pane fade show active" id="gsheet-tab" role="tabpanel" aria-labelledby="gsheet-tab-btn">
+          <!-- Onglet Google Sheet -->
           <div class="row">
             <div class="col-md-6">
                 <label for="selected_sheet" class="form-label">Liste des Google Sheets</label>
@@ -509,6 +588,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="col-md-6">
                 <label for="sheet_range" class="form-label">Nom de l'onglet</label>
                 <input type="text" name="sheet_range" id="sheet_range" class="form-control" placeholder="Ex : Tableau1">
+            </div>
+            <!-- Nouvelle zone pour activer l'envoi aux personnes en partage -->
+            <div class="col-12 mb-3">
+              <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="use_shared_people" name="use_shared_people" value="1">
+                <label class="form-check-label" for="use_shared_people">
+                  Envoyer aux personnes en partage du Google Sheet
+                </label>
+              </div>
+            </div>
+            <!-- Conteneur pour afficher la liste des personnes partagées -->
+            <div class="col-12" id="sharedPeopleContainer" style="display: none;">
+              <h4>Liste des personnes en partage :</h4>
+              <ul id="sharedPeopleList" class="list-group"></ul>
             </div>
             <!-- Zone de debug pour le Google Sheet -->
             <div class="col-md-6">
@@ -581,10 +674,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="col-12">
           <h3 class="mt-4">Contenu du mail</h3>
         </div>
-        <div class="col-12">
+        <div class="col-8">
           <label for="subject" class="form-label required">Sujet</label>
           <input type="text" name="subject" id="subject" class="form-control" value="🔔 Rappel – Événement de lancement de Raise-Up Cameroon en France 🎉" required>
         </div>
+        <div class="col-4">
+          <label for="attachments" class="form-label">Pièces jointes</label>
+          <input type="file" name="attachments[]" id="attachments" class="form-control" multiple>
+        </div>
+
         <div class="col-12">
           <label for="message" class="form-label required">Template du mail (HTML)</label>
           <textarea name="message" id="message" class="form-control" rows="10" required>
@@ -596,10 +694,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <p><strong>L’équipe RUC</strong></p>
           </textarea>
         </div>
+
         <div class="col-12">
           <button type="submit" class="btn btn-primary btn-lg w-100 mt-3">Envoyer les mails</button>
         </div>
       </div>
+      <div class="col-12">
+
       <!-- Fin des champs communs -->
       </form>
     </div>
@@ -707,6 +808,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     themeToggle.addEventListener("click", function() {
       document.body.classList.toggle("dark-mode");
     });
+
+    document.addEventListener("DOMContentLoaded", function() {
+  const useSharedPeopleCheckbox = document.getElementById("use_shared_people");
+  const selectedSheetDropdown = document.getElementById("selected_sheet");
+  const spreadsheetIdField = document.getElementById("spreadsheet_id");
+  const sharedPeopleContainer = document.getElementById("sharedPeopleContainer");
+  const sharedPeopleList = document.getElementById("sharedPeopleList");
+
+  // Fonction pour charger la liste des personnes partagées
+  function loadSharedPeople(spreadsheetId) {
+    // Réinitialiser la liste
+    sharedPeopleList.innerHTML = "";
+    if (!spreadsheetId) return;
+
+    fetch("getSheetSharedPeople.php?spreadsheet_id=" + encodeURIComponent(spreadsheetId))
+      .then(response => response.json())
+      .then(data => {
+        // Vérification d'erreur renvoyée par le script
+        if (data.error) {
+          sharedPeopleList.innerHTML = `<li class="list-group-item list-group-item-danger">${data.error}</li>`;
+          return;
+        }
+        // Remplissage de la liste
+        if (Array.isArray(data) && data.length > 0) {
+          data.forEach(person => {
+            // Chaque "person" devrait contenir displayName et emailAddress
+            const li = document.createElement("li");
+            li.className = "list-group-item";
+            li.textContent = `${person.displayName || 'N/A'} (${person.emailAddress || 'N/A'}) - rôle : ${person.role || 'N/A'}`;
+            sharedPeopleList.appendChild(li);
+          });
+        } else {
+          sharedPeopleList.innerHTML = `<li class="list-group-item">Aucune personne partagée trouvée.</li>`;
+        }
+      })
+      .catch(error => {
+        console.error("Erreur lors du chargement des personnes partagées :", error);
+        sharedPeopleList.innerHTML = `<li class="list-group-item list-group-item-danger">Erreur de chargement</li>`;
+      });
+  }
+
+  // Sur changement de la case à cocher
+  useSharedPeopleCheckbox.addEventListener("change", function() {
+    if (this.checked) {
+      sharedPeopleContainer.style.display = "block";
+      // Utiliser l'ID présent dans le champ spreadsheet_id
+      const spreadsheetId = spreadsheetIdField.value.trim();
+      loadSharedPeople(spreadsheetId);
+    } else {
+      sharedPeopleContainer.style.display = "none";
+      sharedPeopleList.innerHTML = "";
+    }
+  });
+
+  // Mettre à jour l'ID du sheet depuis le dropdown et recharger la liste si nécessaire
+  if (selectedSheetDropdown && spreadsheetIdField) {
+    selectedSheetDropdown.addEventListener("change", function() {
+      const selectedId = this.value;
+      spreadsheetIdField.value = selectedId;
+      if (useSharedPeopleCheckbox.checked) {
+        loadSharedPeople(selectedId);
+      }
+    });
+  }
+
+  // Optionnel : si l'utilisateur modifie manuellement le champ "spreadsheet_id"
+  spreadsheetIdField.addEventListener("change", function() {
+    if (useSharedPeopleCheckbox.checked) {
+      loadSharedPeople(this.value.trim());
+    }
+  });
+});
+
+
   </script>
 </body>
 </html>
